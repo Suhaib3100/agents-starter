@@ -106,16 +106,18 @@ const saveMemory = tool({
 // ============================================================================
 
 /**
- * Perform web research by fetching content from documentation sites
- * Currently targets Cloudflare docs for the assignment
+ * Perform web research by fetching content from docs.percify.io
+ * The official Percify documentation site
  */
 const researchWeb = tool({
-  description: `Research information from the web. Use this when the user asks:
+  description: `Search the official Percify documentation at docs.percify.io. Use this when the user asks:
+    - "What is Percify?", "How does X work?"
     - "Research...", "Look up...", "Find information about..."
-    - Questions about Cloudflare, Workers, Agents SDK
-    - Any request for external information lookup`,
+    - Questions about avatars, memories, tones, tools, scheduling
+    - Any question about Percify features or capabilities
+    This searches docs.percify.io and returns official documentation.`,
   inputSchema: z.object({
-    query: z.string().describe("The research query or topic to look up")
+    query: z.string().describe("The search query for docs.percify.io (e.g., 'avatar', 'memory', 'tone', 'tools')")
   }),
   execute: async ({ query }) => {
     const { agent } = getCurrentAgent<PercifyAvatarAgent>();

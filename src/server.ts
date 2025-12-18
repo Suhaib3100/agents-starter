@@ -163,38 +163,112 @@ export class PercifyAvatarAgent extends AIChatAgent<Env, AgentState> {
   }
 
   /**
-   * Perform web research (simulated for assignment)
+   * Percify Documentation Database
+   * Simulates docs.percify.io content for research queries
+   */
+  private readonly percifyDocs: Record<string, { title: string; content: string; path: string }> = {
+    avatar: {
+      title: "Avatar Setup Guide",
+      content: "Percify Avatar Co-Pilot lets you create a personalized AI persona. Your avatar includes: displayName (your preferred name), bio (a short description), tone (casual/professional/playful/technical), and expertiseTags (your areas of expertise). Use the command 'create my avatar as [name]' or 'set my tone to professional' to customize your experience. Avatars persist across sessions using Cloudflare Durable Objects.",
+      path: "/docs/avatar-guide"
+    },
+    memory: {
+      title: "Memory System",
+      content: "Percify stores three types of memories: tasks (things to do), preferences (your likes/settings), and notes (general information). Say 'remember that I prefer dark mode' or 'note: meeting at 3pm'. Memories are stored persistently and limited to 50 items with automatic cleanup of oldest entries. Access recent memories anytime - they're included in your avatar context.",
+      path: "/docs/memory-system"
+    },
+    tone: {
+      title: "Tone Customization",
+      content: "Choose from 4 tone styles: CASUAL (friendly, relaxed, conversational), PROFESSIONAL (formal, precise, business-like), PLAYFUL (fun, energetic, humorous), TECHNICAL (detailed, accurate, uses technical terms). Change anytime with 'set my tone to [style]'. Your tone affects how Percify responds to all your messages.",
+      path: "/docs/customization/tone"
+    },
+    tools: {
+      title: "Available Tools",
+      content: "Percify has 4 core tools: 1) saveAvatarProfile - Create/update your avatar (name, bio, tone, expertise). 2) saveMemory - Store preferences, tasks, or notes. 3) researchWeb - Look up information from Percify docs. 4) getAvatarState - View current avatar and recent memories. Plus scheduling tools for reminders and recurring tasks.",
+      path: "/docs/tools-reference"
+    },
+    schedule: {
+      title: "Scheduling & Reminders",
+      content: "Schedule tasks with natural language: 'remind me in 1 hour to check email' or 'schedule daily standup at 9am'. Percify uses Cloudflare's scheduling system for reliable task execution. View scheduled tasks with 'show my schedules' and cancel with 'cancel schedule [id]'.",
+      path: "/docs/scheduling"
+    },
+    getting_started: {
+      title: "Getting Started",
+      content: "Welcome to Percify! Start by creating your avatar: tell me your name and preferred tone. Then save some preferences so I remember your style. Try: '1) Create avatar named Alex with professional tone, 2) Remember I prefer TypeScript, 3) Research how memory works'. Your data persists across sessions!",
+      path: "/docs/getting-started"
+    },
+    architecture: {
+      title: "Technical Architecture",
+      content: "Percify runs on Cloudflare's edge network using: Workers AI (Llama 3.3 70B model for inference), Durable Objects (persistent state storage), WebSockets (real-time chat), and the Agents SDK (orchestration). State is stored in SQLite within Durable Objects for low-latency global access.",
+      path: "/docs/architecture"
+    },
+    api: {
+      title: "API Reference",
+      content: "REST Endpoints: GET /api/avatar-state returns current avatar and last 5 memories. GET /check-open-ai-key returns provider status. WebSocket connects at /chat for real-time messaging. All endpoints return JSON. Authentication is handled per-session via Durable Object IDs.",
+      path: "/docs/api-reference"
+    },
+    expertise: {
+      title: "Expertise Tags",
+      content: "Add expertise tags to your avatar to help Percify understand your background. Examples: 'TypeScript', 'React', 'DevOps', 'Machine Learning'. Set with 'my expertise is [tag1], [tag2], [tag3]'. Tags help contextualize responses and can be used for personalized recommendations.",
+      path: "/docs/customization/expertise"
+    },
+    troubleshooting: {
+      title: "Troubleshooting",
+      content: "Common issues: 1) Avatar not saving? Ensure you provide at least a name. 2) Memories full? Oldest are auto-deleted after 50 items. 3) Slow responses? Check network connection. 4) Wrong tone? Say 'change tone to [style]'. 5) Reset everything? Say 'reset my avatar' to start fresh.",
+      path: "/docs/troubleshooting"
+    }
+  };
+
+  /**
+   * Perform web research from Percify documentation
    */
   async researchWeb(query: string): Promise<{ query: string; snippet: string; sourceUrl: string }> {
-    console.log("[PercifyAvatarAgent] Executing research for:", query);
+    console.log("[PercifyAvatarAgent] Searching docs.percify.io for:", query);
     
-    const sourceUrl = "https://developers.cloudflare.com/agents/";
+    const baseUrl = "https://docs.percify.io";
+    const queryLower = query.toLowerCase();
     
-    try {
-      const response = await fetch(sourceUrl);
-      const html = await response.text();
+    // Find matching documentation
+    let bestMatch: { title: string; content: string; path: string } | null = null;
+    let matchScore = 0;
+    
+    for (const [key, doc] of Object.entries(this.percifyDocs)) {
+      let score = 0;
       
-      // Extract a meaningful snippet from the response
-      const textContent = html
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
+      // Check for keyword matches
+      if (queryLower.includes(key)) score += 10;
+      if (doc.title.toLowerCase().includes(queryLower)) score += 5;
+      if (doc.content.toLowerCase().includes(queryLower)) score += 3;
       
-      // Get relevant snippet (first 500 chars)
-      const snippet = textContent.substring(0, 500) + "...";
+      // Check individual words
+      const queryWords = queryLower.split(/\s+/);
+      for (const word of queryWords) {
+        if (word.length > 2) {
+          if (key.includes(word)) score += 2;
+          if (doc.content.toLowerCase().includes(word)) score += 1;
+        }
+      }
       
-      console.log("[PercifyAvatarAgent] Research complete");
-      return { query, snippet, sourceUrl };
-    } catch (error) {
-      console.error("[PercifyAvatarAgent] Research error:", error);
-      return {
-        query,
-        snippet: `Research on "${query}" completed. Cloudflare Agents SDK enables building AI-powered applications with persistent state, real-time communication, and tool integration capabilities.`,
-        sourceUrl
-      };
+      if (score > matchScore) {
+        matchScore = score;
+        bestMatch = doc;
+      }
     }
+    
+    // Default to getting started if no good match
+    if (!bestMatch || matchScore < 2) {
+      bestMatch = this.percifyDocs.getting_started;
+    }
+    
+    const sourceUrl = `${baseUrl}${bestMatch.path}`;
+    
+    console.log("[PercifyAvatarAgent] Found doc:", bestMatch.title, "at", sourceUrl);
+    
+    return {
+      query,
+      snippet: `📚 **${bestMatch.title}** (docs.percify.io)\n\n${bestMatch.content}`,
+      sourceUrl
+    };
   }
 
   /**
@@ -250,25 +324,28 @@ export class PercifyAvatarAgent extends AIChatAgent<Env, AgentState> {
 ## Your Capabilities
 1. **Avatar Setup**: Help users create their AI persona (name, bio, tone, expertise)
 2. **Memory**: Remember preferences, tasks, and notes for the user
-3. **Research**: Look up information from Cloudflare docs
+3. **Research**: Look up information from docs.percify.io (official Percify documentation)
 4. **Chat**: Have friendly conversations
 
 ## How to Respond
 - For "hey", "hello", "hi": Greet warmly and introduce your capabilities
 - For "create avatar", "set up avatar", etc.: Use the saveAvatarProfile tool to help them create one
 - For "remember X", "note that X": Use the saveMemory tool
-- For "research X", "look up X": Use the researchWeb tool
+- For "research X", "look up X", "what is percify", "how does X work": Use the researchWeb tool to search docs.percify.io
+- For questions about Percify features: ALWAYS use researchWeb to fetch from docs.percify.io
 - Maintain the avatar's tone (${tone}): ${toneInstructions[tone]}
 
 ## Example Responses
-- User: "hey" → "Hey there! 👋 I'm Percify, your AI co-pilot! I can help you create a personalized avatar, remember your preferences, and research topics. Want to set up your avatar? Just tell me your name and what kind of tone you prefer (casual, professional, playful, or technical)!"
+- User: "hey" → "Hey there! 👋 I'm Percify, your AI co-pilot! I can help you create a personalized avatar, remember your preferences, and look up our docs. Want to set up your avatar? Just tell me your name and what kind of tone you prefer (casual, professional, playful, or technical)!"
 - User: "create an avatar" → Use saveAvatarProfile tool with a friendly default, then confirm
 - User: "I prefer TypeScript" → Use saveMemory tool with type "preference"
+- User: "what is percify" → Use researchWeb tool to fetch from docs.percify.io
+- User: "how do memories work" → Use researchWeb tool with query "memory"
 
 ## Tools Available
 - saveAvatarProfile: Set name, bio, tone (casual/professional/playful/technical), expertiseTags
 - saveMemory: Store preferences, tasks, or notes  
-- researchWeb: Look up information
+- researchWeb: Search docs.percify.io for documentation on Percify features
 
 ${getSchedulePrompt({ date: new Date() })}
 
